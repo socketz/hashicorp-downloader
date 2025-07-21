@@ -6,29 +6,24 @@ use std::path::Path;
 use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::OnceCell;
 
 const RELEASES_URL: &str = "https://api.releases.hashicorp.com/v1/";
 
-// --- Cached Product List ---
-static ALL_PRODUCTS: OnceCell<Vec<String>> = OnceCell::const_new();
+// --- Product List Logic ---
+async fn get_all_products(license_class: &str) -> Result<Vec<String>, MyError> {
+    let url = format!("{}products?license_class={}", RELEASES_URL, license_class);
+    println!("Fetching product list from API: {}", url);
 
-async fn get_all_products() -> Result<&'static Vec<String>, MyError> {
-    ALL_PRODUCTS.get_or_try_init(|| async {
-        let url = format!("{}products", RELEASES_URL);
-        println!("Fetching product list from API: {}", url);
-
-        let client = reqwest::Client::new();
-        let products: Vec<String> = client
-            .get(&url)
-            .header("Accept", "application/vnd+hashicorp.releases-api.v1+json")
-            .send()
-            .await?
-            .json()
-            .await?;
-        
-        Ok(products)
-    }).await
+    let client = reqwest::Client::new();
+    let products: Vec<String> = client
+        .get(&url)
+        .header("Accept", "application/vnd+hashicorp.releases-api.v1+json")
+        .send()
+        .await?
+        .json()
+        .await?;
+    
+    Ok(products)
 }
 
 
@@ -113,6 +108,10 @@ struct Args {
     #[arg(short, long, default_value_t = String::from("auto"))]
     os: String,
 
+    /// License class of the product to download. Possible values: enterprise, hcp, oss
+    #[arg(short = 'l', long, default_value_t = String::from("oss"))]
+    license_class: String,
+
     /// Path to save the downloaded file(s).
     #[arg(short = 'f', long, default_value_t = String::from("./downloads"))]
     filepath: String,
@@ -170,15 +169,22 @@ async fn get_download_url(
     allow_prerelease: bool,
     target_arch: &str,
     target_os: &str,
+    license_class: &str,
 ) -> Result<String, MyError> {
     // 1. Build URL and fetch all releases for the product
-    let url = format!("{}releases/{}", RELEASES_URL, product);
+    let url = format!(
+        "{}releases/{}?license_class={}",
+        RELEASES_URL, product, license_class
+    );
     println!("Fetching releases from: {}", url);
 
     let all_releases: Vec<Release> = reqwest::get(&url).await?.json().await?;
 
     if all_releases.is_empty() {
-        return Err(MyError::LogicError(format!("Product '{}' not found or has no releases.", product)));
+        return Err(MyError::LogicError(format!(
+            "Product '{}' with license class '{}' not found or has no releases.",
+            product, license_class
+        )));
     }
 
     // 2. Filter releases to find the one we want to download
@@ -253,7 +259,7 @@ async fn main() -> Result<(), MyError> {
     };
 
     let products_to_download: Vec<String> = if args.product.to_lowercase() == "all" {
-        get_all_products().await?.clone()
+        get_all_products(&args.license_class).await?
     } else {
         vec![args.product.clone()]
     };
@@ -262,11 +268,21 @@ async fn main() -> Result<(), MyError> {
         println!("\n----------------------------------------");
         println!("Product: {}", product);
         println!("Requested Version: {}", args.product_version);
+        println!("License Class: {}", args.license_class);
         println!("Target Platform: {}/{}", os, arch);
         println!("Allow Prerelease: {}", args.prerelease);
 
         // Get the download URL
-        match get_download_url(product, &args.product_version, args.prerelease, &arch, &os).await {
+        match get_download_url(
+            product,
+            &args.product_version,
+            args.prerelease,
+            &arch,
+            &os,
+            &args.license_class,
+        )
+        .await
+        {
             Ok(download_url) => {
                 println!("\nDownload URL found:\n{}", download_url);
                 
