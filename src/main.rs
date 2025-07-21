@@ -6,18 +6,31 @@ use std::path::Path;
 use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::OnceCell;
 
 const RELEASES_URL: &str = "https://api.releases.hashicorp.com/v1/";
-const ALL_PRODUCTS: &[&str] = &[
-    "boundary",
-    "consul",
-    "consul-template",
-    "envconsul",
-    "nomad",
-    "terraform",
-    "vault",
-    "waypoint",
-];
+
+// --- Cached Product List ---
+static ALL_PRODUCTS: OnceCell<Vec<String>> = OnceCell::const_new();
+
+async fn get_all_products() -> Result<&'static Vec<String>, MyError> {
+    ALL_PRODUCTS.get_or_try_init(|| async {
+        let url = format!("{}products", RELEASES_URL);
+        println!("Fetching product list from API: {}", url);
+
+        let client = reqwest::Client::new();
+        let products: Vec<String> = client
+            .get(&url)
+            .header("Accept", "application/vnd+hashicorp.releases-api.v1+json")
+            .send()
+            .await?
+            .json()
+            .await?;
+        
+        Ok(products)
+    }).await
+}
+
 
 // --- Data Models (Structs) ---
 
@@ -80,8 +93,7 @@ pub enum MyError {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Name of the product to download, or "all" to download all products.
-    /// Possible values: boundary, consul, consul-template, envconsul, nomad, terraform, vault, waypoint
+    /// Name of the product to download, or "all" to download all available products from the API.
     #[arg(short, long)]
     product: String,
 
@@ -240,13 +252,13 @@ async fn main() -> Result<(), MyError> {
         args.arch
     };
 
-    let products_to_download = if args.product.to_lowercase() == "all" {
-        ALL_PRODUCTS.to_vec()
+    let products_to_download: Vec<String> = if args.product.to_lowercase() == "all" {
+        get_all_products().await?.clone()
     } else {
-        vec![args.product.as_str()]
+        vec![args.product.clone()]
     };
 
-    for product in products_to_download {
+    for product in &products_to_download {
         println!("\n----------------------------------------");
         println!("Product: {}", product);
         println!("Requested Version: {}", args.product_version);
