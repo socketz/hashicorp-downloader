@@ -1,0 +1,115 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*.*.*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux)
+        if: runner.os == 'Linux' && matrix.target != 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          elif [ "${{ matrix.target }}" = "i686-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-multilib
+          fi
+
+      - name: Build binary
+        run: cargo build --verbose --release --target ${{ matrix.target }}
+
+      - name: Package for release
+        shell: bash
+        run: |
+          # Determine binary path and name
+          src_path="target/${{ matrix.target }}/release/hcd"
+          dest_name="hcd"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            src_path+=".exe"
+            dest_name+=".exe"
+          fi
+
+          # Create a directory for the artifact
+          artifact_dir="hcd-${{ matrix.target }}"
+          mkdir "$artifact_dir"
+
+          # Copy files
+          cp "$src_path" "$artifact_dir/$dest_name"
+          cp LICENSE README.md "$artifact_dir/"
+
+          # Create a compressed archive
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$artifact_dir.zip" "./$artifact_dir/*"
+            echo "ASSET_PATH=$artifact_dir.zip" >> $GITHUB_ENV
+          else
+            tar -czvf "$artifact_dir.tar.gz" -C "$artifact_dir" .
+            echo "ASSET_PATH=$artifact_dir.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Upload artifact for release
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact-${{ matrix.target }}
+          path: ${{ env.ASSET_PATH }}
+
+  create-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create a release
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          pattern: build-artifact-*
+          merge-multiple: true
+
+      - name: Create Release and Upload Assets
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "artifacts/*"
+          generateReleaseNotes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
