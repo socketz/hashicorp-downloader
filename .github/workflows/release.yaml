@@ -43,6 +43,16 @@ jobs:
         with:
           toolchain: stable
           target: ${{ matrix.target }}
+         
+      - name: Install System Dependencies
+        if: runner.os == 'Linux' && matrix.target != 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          elif [ "${{ matrix.target }}" = "i686-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-multilib
+          fi
 
       - name: Build binary
         run: cargo build --verbose --release --target ${{ matrix.target }}
