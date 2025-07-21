@@ -109,7 +109,6 @@ enum Command {
 #[derive(ClapArgs, Debug)]
 struct DownloadArgs {
      /// Name of the product to download, or "all" to download all available products from the API.
-    #[arg(short, long)]
     product: Option<String>,
 
     /// Product version (e.g., "1.9.3", defaults to "latest").
