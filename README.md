@@ -27,7 +27,7 @@ git clone https://github.com/socketz/hashicorp-downloader.git
 cd hashicorp-downloader
 cargo build --release
 ```
-The executable will be available at `./target/release/hashicorp-downloader`.
+The executable will be available at `./target/release/hcd`.
 
 ## Usage
 
@@ -37,37 +37,37 @@ The tool is designed to be intuitive. If you don't specify a version, it finds t
 
 **1. Download the latest stable version of Terraform:**
 ```sh
-hashicorp-downloader --product terraform
+hcd --product terraform
 ```
 
 **2. Download a specific version of Vault:**
 ```sh
-hashicorp-downloader --product vault --product-version 1.15.2
+hcd --product vault --product-version 1.15.2
 ```
 
 **3. Download the latest pre-release version of Nomad:**
 ```sh
-hashicorp-downloader --product nomad --prerelease
+hcd --product nomad --prerelease
 ```
 
 **4. Download Terraform for Linux (ARM64):**
 ```sh
-hashicorp-downloader --product terraform --os linux --arch arm64
+hcd --product terraform --os linux --arch arm64
 ```
 
 **5. Download the latest Enterprise version of Consul:**
 ```sh
-hashicorp-downloader --product consul --license-class enterprise
+hcd --product consul --license-class enterprise
 ```
 
 **6. Download all available OSS tools to a specific directory:**
 ```sh
-hashicorp-downloader --product all --filepath ./my-tools
+hcd --product all --filepath ./my-tools
 ```
 
 **7. See all available options:**
 ```sh
-hashicorp-downloader --help
+hcd --help
 ```
 
 ### All Command-Line Arguments
