@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Args as ClapArgs, Parser, Subcommand};
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -10,17 +10,16 @@ use tokio::io::AsyncWriteExt;
 const RELEASES_URL: &str = "https://api.releases.hashicorp.com/v1/";
 
 // --- Product List Logic ---
-async fn get_all_products(license_class: &str) -> Result<Vec<String>, MyError> {
+async fn get_all_products(client: &reqwest::Client, license_class: &str) -> Result<Vec<String>, MyError> {
     let url = format!("{}products?license_class={}", RELEASES_URL, license_class);
     println!("Fetching product list from API: {}", url);
 
-    let client = reqwest::Client::new();
     let products: Vec<String> = client
         .get(&url)
         .header("Accept", "application/vnd+hashicorp.releases-api.v1+json")
         .send()
         .await?
-        .json()
+        .json::<Vec<String>>()
         .await?;
     
     Ok(products)
@@ -81,16 +80,37 @@ pub enum MyError {
     Json(#[from] serde_json::Error),
     #[error("Logic error: {0}")]
     LogicError(String),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 // --- Command-Line Arguments ---
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {
-    /// Name of the product to download, or "all" to download all available products from the API.
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    #[command(flatten)]
+    download_args: DownloadArgs,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Clean the destination directory
+    Clean {
+        /// Path of the directory to clean.
+        #[arg(short = 'c', long, default_value_t = String::from("./downloads"))]
+        filepath: String,
+    },
+}
+
+#[derive(ClapArgs, Debug)]
+struct DownloadArgs {
+     /// Name of the product to download, or "all" to download all available products from the API.
     #[arg(short, long)]
-    product: String,
+    product: Option<String>,
 
     /// Product version (e.g., "1.9.3", defaults to "latest").
     #[arg(short = 'v', long, default_value_t = String::from("latest"))]
@@ -117,13 +137,12 @@ struct Args {
     filepath: String,
 }
 
+
 // --- Download Logic ---
 
-async fn download_file(url: &str, target_dir: &str) -> Result<(), MyError> {
+async fn download_file(client: &reqwest::Client, url: &str, target_dir: &str) -> Result<(), MyError> {
     // 1. Ensure the target directory exists
-    tokio::fs::create_dir_all(target_dir)
-        .await
-        .map_err(|e| MyError::LogicError(format!("Could not create directory '{}': {}", target_dir, e)))?;
+    tokio::fs::create_dir_all(target_dir).await?;
 
     // 2. Extract the filename from the URL
     let filename = url.split('/').last().ok_or_else(|| {
@@ -134,7 +153,7 @@ async fn download_file(url: &str, target_dir: &str) -> Result<(), MyError> {
     println!("\nDownloading {} to {}...", filename, dest_path.display());
 
     // 3. Perform the request and get the response bytes
-    let response = reqwest::get(url).await?;
+    let response = client.get(url).send().await?;
 
     if !response.status().is_success() {
         return Err(MyError::LogicError(format!(
@@ -144,18 +163,10 @@ async fn download_file(url: &str, target_dir: &str) -> Result<(), MyError> {
     }
 
     // 4. Create the destination file and write the content
-    let mut dest_file = File::create(&dest_path).await.map_err(|e| {
-        MyError::LogicError(format!(
-            "Could not create destination file '{}': {}",
-            dest_path.display(),
-            e
-        ))
-    })?;
+    let mut dest_file = File::create(&dest_path).await?;
 
     let bytes = response.bytes().await.map_err(MyError::Request)?;
-    dest_file.write_all(&bytes).await.map_err(|e| {
-        MyError::LogicError(format!("Error writing to file '{}': {}", dest_path.display(), e))
-    })?;
+    dest_file.write_all(&bytes).await?;
 
     println!("Download completed successfully.");
     Ok(())
@@ -164,6 +175,7 @@ async fn download_file(url: &str, target_dir: &str) -> Result<(), MyError> {
 // --- Main Logic ---
 
 async fn get_download_url(
+    client: &reqwest::Client,
     product: &str,
     version_req: &str,
     allow_prerelease: bool,
@@ -178,7 +190,7 @@ async fn get_download_url(
     );
     println!("Fetching releases from: {}", url);
 
-    let all_releases: Vec<Release> = reqwest::get(&url).await?.json().await?;
+    let all_releases: Vec<Release> = client.get(&url).send().await?.json::<Vec<Release>>().await?;
 
     if all_releases.is_empty() {
         return Err(MyError::LogicError(format!(
@@ -241,7 +253,24 @@ async fn get_download_url(
 
 #[tokio::main]
 async fn main() -> Result<(), MyError> {
-    let args = Args::parse();
+    let cli = Cli::parse();
+
+    if let Some(Command::Clean { filepath }) = cli.command {
+        let dest_dir = Path::new(&filepath);
+        if dest_dir.exists() {
+            println!("Cleaning destination directory: {}", dest_dir.display());
+            tokio::fs::remove_dir_all(dest_dir).await?;
+            println!("Directory cleaned successfully.");
+        } else {
+            println!("Destination directory {} does not exist, nothing to clean.", dest_dir.display());
+        }
+        return Ok(());
+    }
+
+    let args = cli.download_args;
+    let product_arg = args.product.ok_or_else(|| MyError::LogicError("Product name is required for downloading. Use --product <name> or see --help.".to_string()))?;
+
+    let client = reqwest::Client::new();
 
     // Resolve OS and Arch if set to "auto"
     let os = if args.os == "auto" {
@@ -258,10 +287,10 @@ async fn main() -> Result<(), MyError> {
         args.arch
     };
 
-    let products_to_download: Vec<String> = if args.product.to_lowercase() == "all" {
-        get_all_products(&args.license_class).await?
+    let products_to_download: Vec<String> = if product_arg.to_lowercase() == "all" {
+        get_all_products(&client, &args.license_class).await?
     } else {
-        vec![args.product.clone()]
+        vec![product_arg]
     };
 
     for product in &products_to_download {
@@ -274,6 +303,7 @@ async fn main() -> Result<(), MyError> {
 
         // Get the download URL
         match get_download_url(
+            &client,
             product,
             &args.product_version,
             args.prerelease,
@@ -287,7 +317,7 @@ async fn main() -> Result<(), MyError> {
                 println!("\nDownload URL found:\n{}", download_url);
                 
                 // Start the file download
-                if let Err(e) = download_file(&download_url, &args.filepath).await {
+                if let Err(e) = download_file(&client, &download_url, &args.filepath).await {
                     eprintln!("\nError during download for {}: {}", product, e);
                     // Continue to the next product instead of exiting
                 }

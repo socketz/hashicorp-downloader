@@ -13,6 +13,7 @@ This tool is designed to simplify the process of fetching HashiCorp tools like T
 - **Pre-Release Support**: Option to download the latest pre-release versions.
 - **License Class Selection**: Download different license editions (`oss`, `enterprise`, `hcp`).
 - **Bulk Downloads**: Download all available products for a specific license class with a single command (`--product all`).
+- **Standalone Clean Command**: Safely clean the output directory without triggering a download.
 - **Dynamic Product List**: Fetches the most up-to-date list of products directly from the HashiCorp API.
 
 ## Installation
@@ -31,8 +32,6 @@ The executable will be available at `./target/release/hcd`.
 
 ## Usage
 
-The tool is designed to be intuitive. If you don't specify a version, it finds the latest stable release. If you don't specify an OS or architecture, it uses your current system's values.
-
 ### Examples
 
 **1. Download the latest stable version of Terraform:**
@@ -45,33 +44,31 @@ hcd --product terraform
 hcd --product vault --product-version 1.15.2
 ```
 
-**3. Download the latest pre-release version of Nomad:**
-```sh
-hcd --product nomad --prerelease
-```
-
-**4. Download Terraform for Linux (ARM64):**
-```sh
-hcd --product terraform --os linux --arch arm64
-```
-
-**5. Download the latest Enterprise version of Consul:**
-```sh
-hcd --product consul --license-class enterprise
-```
-
-**6. Download all available OSS tools to a specific directory:**
+**3. Download all available OSS tools to a specific directory:**
 ```sh
 hcd --product all --filepath ./my-tools
 ```
 
-**7. See all available options:**
+**4. Clean the default downloads folder:**
+```sh
+hcd clean
+```
+
+**5. Clean a specific folder:**
+```sh
+hcd clean --filepath ./my-tools
+```
+
+**6. See all available options:**
 ```sh
 hcd --help
 ```
 
-### All Command-Line Arguments
+### Commands and Arguments
 
+The tool now uses subcommands. The default action is to download.
+
+**Download Arguments:**
 | Flag (Long)         | Flag (Short) | Description                                                              | Default      |
 | ------------------- | ------------ | ------------------------------------------------------------------------ | ------------ |
 | `--product`         | `-p`         | Name of the product to download, or "all".                               | (Required)   |
@@ -81,8 +78,16 @@ hcd --help
 | `--arch`            | `-a`         | Target architecture (e.g., `amd64`, `arm64`).                            | `auto`       |
 | `--os`              | `-o`         | Target operating system (e.g., `linux`, `windows`).                      | `auto`       |
 | `--filepath`        | `-f`         | Path to save the downloaded file(s).                                     | `./downloads`|
-| `--help`            | `-h`         | Show the help message.                                                   |              |
-| `--version`         | `-V`         | Show the application version.                                            |              |
+
+**`clean` Command:**
+Cleans (removes) the specified directory.
+```sh
+hcd clean [OPTIONS]
+```
+| Flag (Long)  | Flag (Short) | Description                      | Default       |
+| ------------ | ------------ | -------------------------------- | ------------- |
+| `--filepath` | `-f`         | Path of the directory to clean.  | `./downloads` |
+
 
 ## License
 
