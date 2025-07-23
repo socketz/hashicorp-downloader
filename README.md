@@ -1,5 +1,7 @@
 # HashiCorp Downloader
 
+![Build Status](https://github.com/socketz/hashicorp-downloader/actions/workflows/release.yaml/badge.svg)
+
 A simple, fast, and convenient command-line tool to download any official HashiCorp product directly from their release repository.
 
 This tool is designed to simplify the process of fetching HashiCorp tools like Terraform, Vault, Consul, and others. It automatically detects your OS and architecture and downloads the latest stable version by default, eliminating the need for complex scripts or manual browsing of the releases website.
@@ -17,8 +19,6 @@ This tool is designed to simplify the process of fetching HashiCorp tools like T
 - **Dynamic Product List**: Fetches the most up-to-date list of products directly from the HashiCorp API.
 
 ## Installation
-
-> **Note**: Soon, pre-compiled binaries for major platforms (Windows, macOS, and Linux) will be automatically generated via GitHub Actions and available for download from the project's [Releases page](https://github.com/socketz/hashicorp-downloader/releases).
 
 Ensure you have the Rust toolchain installed. You can get it from [rustup.rs](https://rustup.rs/).
 
