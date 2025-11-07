@@ -575,6 +575,27 @@ async fn main() -> Result<(), MyError> {
                         } else {
                             println!("--extract specified, but downloaded file is not a .zip: {}", saved_path.display());
                         }
+                    } else if has_zip_ext(&saved_path) {
+                        // Ask if user wants to extract when --extract not specified
+                        let question = format!("Do you want to extract executables from {}?", saved_path.file_name().unwrap().to_string_lossy());
+                        match prompt_yes_no(&question) {
+                            Ok(true) => {
+                                println!("Extracting (only executable) from {} ...", saved_path.display());
+                                let count = extract_exe_from_zip(&saved_path, Path::new(&args.filepath), args.force).await?;
+                                println!("Extracted {} executable file(s).", count);
+                                // Remove the ZIP after extraction
+                                tokio::fs::remove_file(&saved_path).await?;
+                                println!("Extraction complete and ZIP removed.");
+                            },
+                            Ok(false) => {
+                                println!("ZIP file downloaded but not extracted: {}", saved_path.display());
+                                println!("To extract later, run the same command with --extract flag.");
+                            },
+                            Err(prompt_err) => {
+                                eprintln!("⚠️  Input error: {}", prompt_err);
+                                println!("ZIP file available at: {}", saved_path.display());
+                            }
+                        }
                     } else if has_msi_ext(&saved_path) {
                         // Handle MSI files - offer installation
                         #[cfg(windows)]
