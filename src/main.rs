@@ -135,6 +135,10 @@ struct DownloadArgs {
     /// Force overwrite of already existing downloaded files and extracted executables.
     #[arg(long)]
     force: bool,
+
+    /// List all available products from releases.hashicorp.com
+    #[arg(long)]
+    list: bool,
 }
 
 
@@ -511,7 +515,32 @@ async fn main() -> Result<(), MyError> {
     let cli = Cli::parse();
 
     let args = cli.download_args;
-    let product_arg = args.product.ok_or_else(|| MyError::LogicError("Product name is required for downloading. Use --product <name> or see --help.".to_string()))?;
+
+    // Handle list command first
+    if args.list {
+        let client = reqwest::Client::new();
+        println!("Fetching available products from releases.hashicorp.com...\n");
+        
+        match get_all_products(&client, &args.license_class).await {
+            Ok(products) => {
+                println!("Available products (license class: {}):", args.license_class);
+                println!("{}", "=".repeat(50));
+                for (i, product) in products.iter().enumerate() {
+                    println!("{:3}. {}", i + 1, product);
+                }
+                println!("\nTotal: {} products", products.len());
+                println!("\nUsage: hcd <product_name> [options]");
+                println!("Example: hcd terraform --extract");
+                return Ok(());
+            },
+            Err(e) => {
+                eprintln!("Error fetching product list: {}", e);
+                return Err(e);
+            }
+        }
+    }
+
+    let product_arg = args.product.ok_or_else(|| MyError::LogicError("Product name is required for downloading. Use --list to see available products or specify --product <name>.".to_string()))?;
 
     let client = reqwest::Client::new();
 
