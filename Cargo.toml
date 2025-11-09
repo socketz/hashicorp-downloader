@@ -1,6 +1,6 @@
 [package]
 name = "hashicorp-downloader"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["socketz <info@socketz.net>"]
 description = "A fast, cross-platform HashiCorp product downloader written in Rust, to always get the version you need."
