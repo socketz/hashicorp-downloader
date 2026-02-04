@@ -3,7 +3,6 @@ name: Build and Release
 on:
   push:
     branches: [ "master" ]
-    tags: [ "v*.*.*" ]
   pull_request:
     branches: [ "master" ]
   workflow_dispatch:
@@ -92,15 +91,60 @@ jobs:
           name: build-artifact-${{ matrix.target }}
           path: ${{ env.ASSET_PATH }}
 
-  create-release:
-    name: Create GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+  bump-and-tag:
+    name: Bump version and create tag
     needs: build
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && !startsWith(github.event.head_commit.message, 'chore:')
     permissions:
       contents: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Determine bump type
+        id: bump
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          TYPE="patch"
+          
+          shopt -s nocasematch || true
+          if [[ "$COMMIT_MSG" =~ \bbreaking\b ]] || [[ "$COMMIT_MSG" =~ \bmajor\b ]]; then
+            TYPE="major"
+          elif [[ "$COMMIT_MSG" =~ \bfeat\b ]] || [[ "$COMMIT_MSG" =~ \bminor\b ]]; then
+            TYPE="minor"
+          fi
+          
+          echo "type=$TYPE" >> $GITHUB_OUTPUT
+          echo "Bump type: $TYPE"
+
+      - name: Bump version
+        id: version
+        run: |
+          NEW_VERSION=$(python scripts/bump_version.py "${{ steps.bump.outputs.type }}")
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Commit and tag
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock || true
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
+          git push origin master
+          git push origin "v$NEW_VERSION"
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -108,9 +152,11 @@ jobs:
           pattern: build-artifact-*
           merge-multiple: true
 
-      - name: Create Release and Upload Assets
+      - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
+          tag: v${{ steps.version.outputs.new_version }}
+          name: Release v${{ steps.version.outputs.new_version }}
           artifacts: "artifacts/*"
           generateReleaseNotes: true
           token: ${{ secrets.GITHUB_TOKEN }}
