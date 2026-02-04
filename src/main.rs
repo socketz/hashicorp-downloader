@@ -209,7 +209,8 @@ fn prompt_yes_no(question: &str) -> io::Result<bool> {
     }
 }
 
-// Helper: run MSI installation silently
+// Helper: run MSI installation silently (Windows only)
+#[cfg(target_os = "windows")]
 async fn install_msi_silent(msi_path: &Path) -> Result<(), MyError> {
     println!("Starting silent installation of {}...", msi_path.display());
     
@@ -335,7 +336,6 @@ async fn extract_exe_from_zip(zip_path: &Path, dest_dir: &Path, force: bool) -> 
     // On Unix/macOS: try system tools first, then fallback to internal
     #[cfg(all(unix, not(windows)))]
     {
-        use std::ffi::OsStr;
         // Create a temporary extraction directory under dest_dir
         let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
         let tmp_dir = dest_dir.join(format!(".hcd_extract_{}", millis));
