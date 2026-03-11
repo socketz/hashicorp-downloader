@@ -69,7 +69,7 @@ def main():
     # Replace only the matched version line inside the [package] block
     start, end = pkg_match.span(1)
     new_pkg_block = re.sub(r"(?m)^(version\s*=\s*)\"([0-9]+\.[0-9]+\.[0-9]+)\"",
-                           rf"\\1\"{new_ver}\"", pkg_block, count=1)
+                           rf'''\1"{new_ver}"''', pkg_block, count=1)
     new_text = text[:start] + new_pkg_block + text[end:]
     cargo_toml.write_text(new_text, encoding="utf-8")
 
