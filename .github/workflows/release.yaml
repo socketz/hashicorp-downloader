@@ -113,8 +113,9 @@ jobs:
 
       - name: Determine bump type
         id: bump
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
           TYPE="patch"
           
           shopt -s nocasematch || true
